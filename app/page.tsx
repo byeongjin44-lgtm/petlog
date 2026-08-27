@@ -1,4 +1,20 @@
-export default function Home() {
+import { createClient } from "@/lib/supabase/server";
+import LogoutButton from "@/app/components/LogoutButton";
+ 
+export default async function Home() {
+   const supabase = await createClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    async function handleLogout() {
+      "use server";
+
+      const supabase = await createClient();
+      await supabase.auth.signOut();
+    }
+
   return (
     <main className="min-h-screen bg-white">
       <section className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
@@ -12,7 +28,9 @@ export default function Home() {
           </h1>
 
           <p className="mt-6 text-xl font-medium text-zinc-700">
-            우리 아이의 모든 순간을 기록하세요.
+
+            {user ? `로그인됨: ${user.email}` : "로그인되지 않음"}
+
           </p>
 
           <p className="mt-3 text-sm leading-6 text-zinc-500">
@@ -23,19 +41,25 @@ export default function Home() {
         </div>
 
         <div className="flex w-full max-w-xs flex-col gap-3">
-          <a
-            href="/login"
-            className="flex h-12 items-center justify-center rounded-xl bg-zinc-900 text-sm font-semibold text-white transition hover:bg-zinc-700"
-          >
-            로그인
-          </a>
+           {user ? (
+            <LogoutButton />
+          ) : (
+            <>
+              <a
+                href="/login"
+                className="flex h-12 items-center justify-center rounded-xl bg-zinc-900 text-sm font-semibold text-white transition hover:bg-zinc-700"
+              >
+                로그인
+              </a>
 
-          <a
-            href="/signup"
-            className="flex h-12 items-center justify-center rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
-          >
-            회원가입
-          </a>
+              <a
+                href="/signup"
+                className="flex h-12 items-center justify-center rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+              >
+                회원가입
+              </a>
+            </>
+          )}
         </div>
       </section>
     </main>
