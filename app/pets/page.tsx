@@ -15,17 +15,22 @@ export default async function PetsPage() {
 
   const { data: pets, error } = await supabase
     .from("pets")
-    .select("id, name, species, breed, profile_image")
+    .select(
+      "id, name, species, breed, profile_image_path, created_at"
+    )
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error("반려동물 목록 조회 실패:", error);
+    console.error(
+      "반려동물 목록 조회 실패:",
+      error
+    );
   }
 
   return (
     <main className="min-h-screen bg-white">
       <section className="mx-auto max-w-3xl px-6 py-12">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-zinc-900">
               내 반려동물
@@ -38,7 +43,7 @@ export default async function PetsPage() {
 
           <Link
             href="/pets/new"
-            className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-700"
+            className="shrink-0 rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-700"
           >
             반려동물 등록
           </Link>
@@ -59,47 +64,54 @@ export default async function PetsPage() {
           </div>
         ) : (
           <div className="mt-10 grid gap-5 sm:grid-cols-2">
-            {pets.map((pet) => (
-              <div
-                key={pet.id}
-                className="overflow-hidden rounded-2xl border border-zinc-200 bg-white"
-              >
+            {pets.map((pet) => {
+              const imageUrl =
+                pet.profile_image_path
+                  ? supabase.storage
+                      .from("pet-images")
+                      .getPublicUrl(
+                        pet.profile_image_path
+                      ).data.publicUrl
+                  : null;
+
+              return (
                 <Link
-                key={pet.id}
-                href={`/pets/${pet.id}`}
-                className="overflow-hidden rounded-2xl border border-zinc-200 bg-white transition hover:shadow-md"
-                >                    
+                  key={pet.id}
+                  href={`/pets/${pet.id}`}
+                  className="overflow-hidden rounded-2xl border border-zinc-200 bg-white transition hover:shadow-md"
+                >
+                  {imageUrl ? (
+                    <img
+                      src={imageUrl}
+                      alt={pet.name}
+                      className="aspect-square w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex aspect-square w-full items-center justify-center bg-zinc-100 text-sm text-zinc-400">
+                      등록된 사진 없음
+                    </div>
+                  )}
 
-                {pet.profile_image ? (
-                  <img
-                    src={pet.profile_image}
-                    alt={pet.name}
-                    className="aspect-square w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex aspect-square w-full items-center justify-center bg-zinc-100 text-sm text-zinc-400">
-                    등록된 사진 없음
+                  <div className="p-5">
+                    <h2 className="text-xl font-bold text-zinc-900">
+                      {pet.name}
+                    </h2>
+
+                    <p className="mt-2 text-sm text-zinc-500">
+                      {pet.species === "dog"
+                        ? "강아지"
+                        : pet.species === "cat"
+                          ? "고양이"
+                          : "기타"}
+
+                      {pet.breed
+                        ? ` · ${pet.breed}`
+                        : ""}
+                    </p>
                   </div>
-                )}
-
-                <div className="p-5">
-                  <h2 className="text-xl font-bold text-zinc-900">
-                    {pet.name}
-                  </h2>
-
-                  <p className="mt-2 text-sm text-zinc-500">
-                    {pet.species === "dog"
-                      ? "강아지"
-                      : pet.species === "cat"
-                      ? "고양이"
-                      : "기타"}
-                    {pet.breed ? ` · ${pet.breed}` : ""}
-                  </p>
-                </div>
                 </Link>
-              </div>
-              
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

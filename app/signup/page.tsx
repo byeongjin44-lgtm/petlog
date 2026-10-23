@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -64,12 +65,12 @@ export default function SignupPage() {
       <section className="flex min-h-screen flex-col items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-10 text-center">
-            <a
+            <Link
               href="/"
               className="text-3xl font-bold tracking-tight text-zinc-900"
             >
               petLog
-            </a>
+            </Link>
 
             <p className="mt-3 text-sm text-zinc-500">
               반려동물과 함께하는 일상을 기록해보세요.

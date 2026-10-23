@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import DateInput from "@/app/components/DateInput";
 
 export default async function NewPetPage() {
   const supabase = await createClient();
@@ -13,94 +15,159 @@ export default async function NewPetPage() {
   }
 
   async function createPet(formData: FormData) {
-  "use server";
+    "use server";
 
-  const supabase = await createClient();
+    const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
-  }
+    if (!user) {
+      redirect("/login");
+    }
 
-  const name = formData.get("name")?.toString().trim();
-  const species = formData.get("species")?.toString();
-  const breed = formData.get("breed")?.toString().trim() || null;
-  const gender = formData.get("gender")?.toString() || null;
-  const birthDate = formData.get("birth_date")?.toString() || null;
-  const weightValue = formData.get("weight")?.toString();
+    const name = formData.get("name")?.toString().trim();
+    const species = formData.get("species")?.toString();
+    const breed = formData.get("breed")?.toString().trim() || null;
+    const gender = formData.get("gender")?.toString() || null;
 
-  const weight = weightValue ? Number(weightValue) : null;
+    const neuteredValue = formData.get("neutered")?.toString();
 
-  if (!name || !species) {
-    return;
-  }
+    const neutered =
+      neuteredValue === "true"
+        ? true
+        : neuteredValue === "false"
+          ? false
+          : null;
 
-  const image = formData.get("profile_image");
+    const birthDate =
+      formData.get("birth_date")?.toString() || null;
 
-  let profileImage: string | null = null;
+    const weightValue =
+      formData.get("weight")?.toString();
 
-  if (image instanceof File && image.size > 0) {
-    const extension = image.name.split(".").pop() || "jpg";
+    const weight =
+      weightValue ? Number(weightValue) : null;
 
-    const fileName = `${crypto.randomUUID()}.${extension}`;
+    const image = formData.get("profile_image");
 
-    const filePath = `${user.id}/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("pet-images")
-      .upload(filePath, image, {
-        contentType: image.type,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error("이미지 업로드 실패:", uploadError);
+    if (!name || !species) {
+      console.error("이름과 종류는 필수입니다.");
       return;
     }
 
-    const {
-      data: { publicUrl },
-    } = supabase.storage
-      .from("pet-images")
-      .getPublicUrl(filePath);
+    let profileImagePath: string | null = null;
 
-    profileImage = publicUrl;
+    if (image instanceof File && image.size > 0) {
+      const extension =
+        image.name.split(".").pop()?.toLowerCase() || "jpg";
+
+      const fileName =
+        `${crypto.randomUUID()}.${extension}`;
+
+      const filePath =
+        `${user.id}/${fileName}`;
+
+      const { error: uploadError } =
+        await supabase.storage
+          .from("pet-images")
+          .upload(filePath, image, {
+            contentType: image.type || undefined,
+            upsert: false,
+          });
+
+      if (uploadError) {
+        console.error(
+          "프로필 이미지 업로드 실패:",
+          uploadError
+        );
+        return;
+      }
+
+      profileImagePath = filePath;
+    }
+
+    const { error: insertError } = await supabase
+      .from("pets")
+      .insert({
+        user_id: user.id,
+        name,
+        species,
+        breed,
+        gender,
+        neutered,
+        birth_date: birthDate,
+        weight,
+        profile_image_path: profileImagePath,
+      });
+
+    if (insertError) {
+      console.error(
+        "반려동물 등록 실패:",
+        insertError
+      );
+
+      // DB 등록에 실패했다면 방금 업로드한 이미지 정리
+      if (profileImagePath) {
+        const { error: removeError } =
+          await supabase.storage
+            .from("pet-images")
+            .remove([profileImagePath]);
+
+        if (removeError) {
+          console.error(
+            "등록 실패 이미지 정리 실패:",
+            removeError
+          );
+        }
+      }
+
+      return;
+    }
+
+    redirect("/pets");
   }
-
-  const { error } = await supabase.from("pets").insert({
-    user_id: user.id,
-    name,
-    species,
-    breed,
-    gender,
-    birth_date: birthDate,
-    weight,
-    profile_image: profileImage,
-  });
-
-  if (error) {
-    console.error("반려동물 등록 실패:", error);
-    return;
-  }
-
-  redirect("/pets");
-}
 
   return (
     <main className="min-h-screen bg-white">
       <section className="mx-auto max-w-md px-6 py-12">
-        <h1 className="text-3xl font-bold text-zinc-900">
+        <Link
+          href="/pets"
+          className="text-sm font-medium text-zinc-500 hover:text-zinc-900"
+        >
+          ← 내 반려동물
+        </Link>
+
+        <h1 className="mt-6 text-3xl font-bold text-zinc-900">
           반려동물 등록
         </h1>
 
         <p className="mt-2 text-sm text-zinc-500">
-          소중한 반려동물의 정보를 등록해주세요.
+          함께하는 반려동물의 정보를 등록해주세요.
         </p>
 
-        <form action={createPet} className="mt-8 space-y-5">
+        <form
+          action={createPet}
+          className="mt-8 space-y-5"
+        >
+          <div>
+            <label
+              htmlFor="profile_image"
+              className="mb-2 block text-sm font-medium text-zinc-700"
+            >
+              프로필 사진
+            </label>
+
+            <input
+              id="profile_image"
+              name="profile_image"
+              type="file"
+              accept="image/*"
+              className="w-full rounded-xl border border-zinc-200 px-4 py-3 text-sm"
+            />
+          </div>
+
           <div>
             <label
               htmlFor="name"
@@ -114,27 +181,10 @@ export default async function NewPetPage() {
               name="name"
               type="text"
               required
+              placeholder="반려동물 이름"
               className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
-              placeholder="예: 초코"
             />
           </div>
-
-          <div>
-            <label
-                htmlFor="profile_image"
-                className="mb-2 block text-sm font-medium text-zinc-700"
-            >
-                프로필 사진
-            </label>
-
-            <input
-                id="profile_image"
-                name="profile_image"
-                type="file"
-                accept="image/*"
-                className="w-full rounded-xl border border-zinc-200 px-4 py-3 text-sm"
-            />
-            </div>
 
           <div>
             <label
@@ -172,8 +222,8 @@ export default async function NewPetPage() {
               id="breed"
               name="breed"
               type="text"
-              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
               placeholder="예: 말티즈"
+              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
             />
           </div>
 
@@ -191,32 +241,32 @@ export default async function NewPetPage() {
               defaultValue=""
               className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 outline-none focus:border-zinc-400"
             >
-              <option value="" disabled>
-                선택해주세요
-              </option>
+              <option value="">선택해주세요</option>
               <option value="male">수컷</option>
               <option value="female">암컷</option>
             </select>
           </div>
-            <div>
+
+          <div>
             <label
-                htmlFor="neutered"
-                className="mb-2 block text-sm font-medium text-zinc-700"
+              htmlFor="neutered"
+              className="mb-2 block text-sm font-medium text-zinc-700"
             >
-                중성화 여부
+              중성화 여부
             </label>
 
             <select
-                id="neutered"
-                name="neutered"
-                defaultValue=""
-                className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 outline-none focus:border-zinc-400"
+              id="neutered"
+              name="neutered"
+              defaultValue=""
+              className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 outline-none focus:border-zinc-400"
             >
-                <option value="">선택해주세요</option>
-                <option value="true">중성화 완료</option>
-                <option value="false">중성화 안 함</option>
+              <option value="">선택해주세요</option>
+              <option value="true">중성화 완료</option>
+              <option value="false">중성화 안 함</option>
             </select>
-            </div>
+          </div>
+
           <div>
             <label
               htmlFor="birth_date"
@@ -225,10 +275,9 @@ export default async function NewPetPage() {
               생년월일
             </label>
 
-            <input
+            <DateInput
               id="birth_date"
               name="birth_date"
-              type="date"
               className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
             />
           </div>
@@ -247,8 +296,8 @@ export default async function NewPetPage() {
               type="number"
               step="0.1"
               min="0"
-              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
               placeholder="예: 4.5"
+              className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
             />
           </div>
 
@@ -256,7 +305,7 @@ export default async function NewPetPage() {
             type="submit"
             className="w-full rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white transition hover:bg-zinc-700"
           >
-            반려동물 등록
+            등록하기
           </button>
         </form>
       </section>

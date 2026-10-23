@@ -8,13 +8,6 @@ export default async function Home() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    async function handleLogout() {
-      "use server";
-
-      const supabase = await createClient();
-      await supabase.auth.signOut();
-    }
-
   return (
     <main className="min-h-screen bg-white">
       <section className="flex min-h-screen flex-col items-center justify-center px-6 text-center">

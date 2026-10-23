@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import DateInput from "@/app/components/DateInput";
+import ProfileImageInput from "./ProfileImageInput";
 
 type EditPetPageProps = {
   params: Promise<{
@@ -15,7 +17,6 @@ export default async function EditPetPage({
 
   const supabase = await createClient();
 
-  // 현재 로그인 사용자 확인
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -24,11 +25,10 @@ export default async function EditPetPage({
     redirect("/login");
   }
 
-  // 수정할 반려동물 기존 데이터 조회
   const { data: pet, error } = await supabase
     .from("pets")
     .select(
-      "id, name, species, breed, gender, neutered, birth_date, weight, profile_image"
+      "id, name, species, breed, gender, neutered, birth_date, weight, profile_image_path"
     )
     .eq("id", id)
     .single();
@@ -37,12 +37,24 @@ export default async function EditPetPage({
     notFound();
   }
 
-  async function updatePet(formData: FormData) {
+  // DB에는 path만 저장하고,
+  // 화면에 표시할 때만 실제 URL 생성
+  const currentImageUrl =
+    pet.profile_image_path
+      ? supabase.storage
+          .from("pet-images")
+          .getPublicUrl(
+            pet.profile_image_path
+          ).data.publicUrl
+      : null;
+
+  async function updatePet(
+    formData: FormData
+  ) {
     "use server";
 
     const supabase = await createClient();
 
-    // Server Action에서도 로그인 사용자 다시 확인
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -51,11 +63,13 @@ export default async function EditPetPage({
       redirect("/login");
     }
 
-    // 현재 DB의 반려동물 정보 다시 조회
-    // 특히 기존 이미지 경로 확인을 위해 필요
-    const { data: currentPet, error: currentPetError } = await supabase
+    // 수정 직전 DB 상태 다시 조회
+    const {
+      data: currentPet,
+      error: currentPetError,
+    } = await supabase
       .from("pets")
-      .select("id, profile_image")
+      .select("id, profile_image_path")
       .eq("id", id)
       .single();
 
@@ -63,58 +77,84 @@ export default async function EditPetPage({
       notFound();
     }
 
-    // 기본 정보
-    const name = formData.get("name")?.toString().trim();
-    const species = formData.get("species")?.toString();
+    const name =
+      formData
+        .get("name")
+        ?.toString()
+        .trim();
+
+    const species =
+      formData
+        .get("species")
+        ?.toString();
 
     const breed =
-      formData.get("breed")?.toString().trim() || null;
+      formData
+        .get("breed")
+        ?.toString()
+        .trim() || null;
 
     const gender =
-      formData.get("gender")?.toString() || null;
+      formData
+        .get("gender")
+        ?.toString() || null;
 
-    // 중성화 여부
     const neuteredValue =
-      formData.get("neutered")?.toString();
+      formData
+        .get("neutered")
+        ?.toString();
 
     const neutered =
       neuteredValue === "true"
         ? true
         : neuteredValue === "false"
-        ? false
-        : null;
+          ? false
+          : null;
 
-    // 생년월일
     const birthDate =
-      formData.get("birth_date")?.toString() || null;
+      formData
+        .get("birth_date")
+        ?.toString() || null;
 
-    // 체중
     const weightValue =
-      formData.get("weight")?.toString();
+      formData
+        .get("weight")
+        ?.toString();
 
     const weight =
-      weightValue ? Number(weightValue) : null;
+      weightValue
+        ? Number(weightValue)
+        : null;
 
     if (!name || !species) {
+      console.error(
+        "이름과 종류는 필수입니다."
+      );
       return;
     }
 
-    // 이미지
-    const image = formData.get("profile_image");
+    const image =
+      formData.get("profile_image");
 
-    // 새 사진을 선택하지 않았다면 기존 URL 유지
-    let profileImage = currentPet.profile_image;
+    let profileImagePath =
+      currentPet.profile_image_path;
 
-    // 새 사진을 선택한 경우
-    if (image instanceof File && image.size > 0) {
+    let newImagePath: string | null = null;
+
+    // 새 이미지를 선택한 경우
+    if (
+      image instanceof File &&
+      image.size > 0
+    ) {
       const extension =
-        image.name.split(".").pop() || "jpg";
+        image.name
+          .split(".")
+          .pop()
+          ?.toLowerCase() || "jpg";
 
       const fileName =
         `${crypto.randomUUID()}.${extension}`;
 
-      // Storage RLS 정책에 맞춰
-      // 첫 번째 폴더명을 user.id로 사용
       const filePath =
         `${user.id}/${fileName}`;
 
@@ -122,7 +162,8 @@ export default async function EditPetPage({
         await supabase.storage
           .from("pet-images")
           .upload(filePath, image, {
-            contentType: image.type,
+            contentType:
+              image.type || undefined,
             upsert: false,
           });
 
@@ -134,68 +175,73 @@ export default async function EditPetPage({
         return;
       }
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage
-        .from("pet-images")
-        .getPublicUrl(filePath);
-
-      profileImage = publicUrl;
+      newImagePath = filePath;
+      profileImagePath = filePath;
     }
 
-    // DB 정보 수정
-    const { error: updateError } = await supabase
-      .from("pets")
-      .update({
-        name,
-        species,
-        breed,
-        gender,
-        neutered,
-        birth_date: birthDate,
-        weight,
-        profile_image: profileImage,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+    const { error: updateError } =
+      await supabase
+        .from("pets")
+        .update({
+          name,
+          species,
+          breed,
+          gender,
+          neutered,
+          birth_date: birthDate,
+          weight,
+          profile_image_path:
+            profileImagePath,
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq("id", id);
 
     if (updateError) {
       console.error(
         "반려동물 수정 실패:",
         updateError
       );
+
+      // 새 이미지는 올라갔는데 DB 수정이 실패했다면
+      // 새 이미지 파일을 정리
+      if (newImagePath) {
+        const { error: removeNewError } =
+          await supabase.storage
+            .from("pet-images")
+            .remove([newImagePath]);
+
+        if (removeNewError) {
+          console.error(
+            "수정 실패 이미지 정리 실패:",
+            removeNewError
+          );
+        }
+      }
+
       return;
     }
 
-    // 새 이미지를 선택했고,
-    // 기존 이미지가 있었다면 기존 Storage 파일 삭제
+    // DB UPDATE까지 성공한 경우에만
+    // 이전 이미지 삭제
     if (
-      image instanceof File &&
-      image.size > 0 &&
-      currentPet.profile_image
+      newImagePath &&
+      currentPet.profile_image_path &&
+      currentPet.profile_image_path !==
+        newImagePath
     ) {
-      const marker = "/pet-images/";
+      const { error: removeOldError } =
+        await supabase.storage
+          .from("pet-images")
+          .remove([
+            currentPet.profile_image_path,
+          ]);
 
-      const markerIndex =
-        currentPet.profile_image.indexOf(marker);
-
-      if (markerIndex !== -1) {
-        const oldFilePath =
-          currentPet.profile_image.slice(
-            markerIndex + marker.length
-          );
-
-        const { error: removeError } =
-          await supabase.storage
-            .from("pet-images")
-            .remove([oldFilePath]);
-
-        if (removeError) {
-          console.error(
-            "기존 이미지 삭제 실패:",
-            removeError
-          );
-        }
+      if (removeOldError) {
+        console.error(
+          "기존 이미지 삭제 실패:",
+          removeOldError
+        );
       }
     }
 
@@ -224,7 +270,6 @@ export default async function EditPetPage({
           action={updatePet}
           className="mt-8 space-y-5"
         >
-          {/* 프로필 이미지 */}
           <div>
             <label
               htmlFor="profile_image"
@@ -233,24 +278,9 @@ export default async function EditPetPage({
               프로필 사진 변경
             </label>
 
-            {pet.profile_image ? (
-              <img
-                src={pet.profile_image}
-                alt={pet.name}
-                className="mb-3 h-32 w-32 rounded-2xl object-cover"
-              />
-            ) : (
-              <div className="mb-3 flex h-32 w-32 items-center justify-center rounded-2xl bg-zinc-100 text-xs text-zinc-400">
-                등록된 사진 없음
-              </div>
-            )}
-
-            <input
-              id="profile_image"
-              name="profile_image"
-              type="file"
-              accept="image/*"
-              className="w-full rounded-xl border border-zinc-200 px-4 py-3 text-sm"
+            <ProfileImageInput
+              currentImageUrl={currentImageUrl}
+              alt={pet.name}
             />
 
             <p className="mt-2 text-xs text-zinc-400">
@@ -258,7 +288,6 @@ export default async function EditPetPage({
             </p>
           </div>
 
-          {/* 이름 */}
           <div>
             <label
               htmlFor="name"
@@ -277,7 +306,6 @@ export default async function EditPetPage({
             />
           </div>
 
-          {/* 종류 */}
           <div>
             <label
               htmlFor="species"
@@ -307,7 +335,6 @@ export default async function EditPetPage({
             </select>
           </div>
 
-          {/* 품종 */}
           <div>
             <label
               htmlFor="breed"
@@ -325,7 +352,6 @@ export default async function EditPetPage({
             />
           </div>
 
-          {/* 성별 */}
           <div>
             <label
               htmlFor="gender"
@@ -354,7 +380,6 @@ export default async function EditPetPage({
             </select>
           </div>
 
-          {/* 중성화 */}
           <div>
             <label
               htmlFor="neutered"
@@ -389,7 +414,6 @@ export default async function EditPetPage({
             </select>
           </div>
 
-          {/* 생년월일 */}
           <div>
             <label
               htmlFor="birth_date"
@@ -398,16 +422,16 @@ export default async function EditPetPage({
               생년월일
             </label>
 
-            <input
+            <DateInput
               id="birth_date"
               name="birth_date"
-              type="date"
-              defaultValue={pet.birth_date ?? ""}
+              defaultValue={
+                pet.birth_date ?? ""
+              }
               className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
             />
           </div>
 
-          {/* 체중 */}
           <div>
             <label
               htmlFor="weight"
@@ -422,7 +446,9 @@ export default async function EditPetPage({
               type="number"
               step="0.1"
               min="0"
-              defaultValue={pet.weight ?? ""}
+              defaultValue={
+                pet.weight ?? ""
+              }
               className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-zinc-400"
             />
           </div>
